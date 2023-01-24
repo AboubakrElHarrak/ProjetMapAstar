@@ -22,7 +22,8 @@ export const parent = new InjectionToken<Map_Node>('parent');
   providers: [
     { provide: g, useValue: 0 },
     { provide: f, useValue: 0 },
-    { provide: parent, useValue: null }
+    { provide: parent, useValue: null },
+
   ],
   bootstrap: [AppComponent]
 })

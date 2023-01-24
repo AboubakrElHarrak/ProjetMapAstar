@@ -1,89 +1,92 @@
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnInit, Optional, ViewChild } from '@angular/core';
 import * as L from 'leaflet';
 import { Inject } from '@angular/core';
 
   
 export class Map_Node {
-    constructor(
-        public name: L.LatLng, 
-        @Inject('g') public g: number, 
-        @Inject('f') public f: number, 
-        @Inject('parent') public parent: Map_Node | any = null
-    ) {}
+    public name: L.LatLng;
+    public g: number;
+    public f: number;
+    public parent: Map_Node | null;
+    public neighbors: Map_Node[]; // new property
+
+    constructor(name: L.LatLng, g: number, f: number, parent: Map_Node | null = null) {
+        this.name = name;
+        this.g = g;
+        this.f = f;
+        this.parent = parent;
+        this.neighbors = []; // initialize as empty array
+    }
 }
 
-class AStar {
-    openList: Map_Node[];
-    closedList: Map_Node[];
-    path: Map_Node[];
-    constructor() {
-        this.openList = [];
-        this.closedList = [];
-        this.path = [];
-    }
-    
-    public isObstacle(nodeName: L.LatLng) : boolean {
-      // Your implementation here
-      // for example you can check if the nodeName is in a certain area or if it has certain properties.
-      return false;
+export class AStar {
+  private openList: Map_Node[] = [];
+  private closedList: Map_Node[] = [];
+  private heuristic: (a: Map_Node, b: Map_Node) => number;
+
+  constructor(heuristic: (a: Map_Node, b: Map_Node) => number) {
+    this.heuristic = heuristic;
   }
 
-    heuristic(pos0: L.LatLng, pos1: L.LatLng): number {
-        // Manhattan distance
-        let d1 = Math.abs(pos1.lat - pos0.lat);
-        let d2 = Math.abs(pos1.lng - pos0.lng);
-        return d1 + d2;
+  findPath(start: Map_Node, goal: Map_Node) {
+    this.openList = [];
+    this.closedList = [];
+
+    start.g = 0;
+    start.f = this.heuristic(start, goal);
+    console.log(start.f);
+
+    this.openList.push(start);
+
+    console.log(this.openList)
+    console.log(this.openList.length > 0);
+
+    while (this.openList.length > 0) {
+      // Get the node with the lowest f value
+      let currentNode = this.openList.sort((a, b) => a.f - b.f)[0];
+
+      console.log(currentNode);
+
+      // Check if we've reached the goal
+      if (currentNode === goal) {
+        let path = [goal];
+        let parent = goal.parent;
+        while (parent) {
+          path.unshift(parent);
+          parent = parent.parent;
+        }
+        return path;
+      }
+
+      // Move the current node to the closed list
+      this.openList.splice(this.openList.indexOf(currentNode), 1);
+      this.closedList.push(currentNode);
+
+      // Get the neighbors
+      let neighbors = currentNode.neighbors;
+      for (let neighbor of neighbors) {
+        // Check if the neighbor has been visited before
+        if (this.closedList.indexOf(neighbor) !== -1) {
+          continue;
+        }
+
+        let gScore = currentNode.g + this.heuristic(currentNode, neighbor);
+
+        // Check if the neighbor is not in the open list or if the new g score is lower than the previous one
+        if (this.openList.indexOf(neighbor) === -1 || gScore < neighbor.g) {
+          neighbor.g = gScore;
+          neighbor.f = neighbor.g + this.heuristic(neighbor, goal);
+          neighbor.parent = currentNode;
+
+          if (this.openList.indexOf(neighbor) === -1) {
+            this.openList.push(neighbor);
+          }
+        }
+      }
     }
 
-    distance(pos0: L.LatLng, pos1: L.LatLng): number {
-        // Manhattan distance
-        let d1 = Math.abs(pos1.lat - pos0.lat);
-        let d2 = Math.abs(pos1.lng - pos0.lng);
-        return d1 + d2;
-    }
-
-    findPath(start: Map_Node, goal: Map_Node): Map_Node[] {
-        this.openList.push(start);
-        while (this.openList.length > 0) {
-            // Get the node with the lowest f value
-            let lowestIndex = 0;
-            for (let i = 0; i < this.openList.length; i++) {
-                if (this.openList[i].f < this.openList[lowestIndex].f) {
-                    lowestIndex = i;
-                }
-            }
-            let currentNode = this.openList[lowestIndex];
-            // End case -- result has been found, return the traced path
-            if (currentNode.name.lat === goal.name.lat && currentNode.name.lng === goal.name.lng) {
-                let current = currentNode;
-                this.path.push(current);
-                while (current.name.lat !== start.name.lat && current.name.lng !== start.name.lng) {
-                    current = current.parent;
-                    this.path.push(current);
-                  }
-                  this.path.reverse();
-                  return this.path;
-                  }
-                  // Normal case -- move currentNode from open to closed, process each of its neighbors
-                  this.openList.splice(lowestIndex, 1);
-                  this.closedList.push(currentNode);
-                  let neighbors: Map_Node[] = [];
-                  // Add all valid neighbors to the openList
-                  for (let i = 0; i < neighbors.length; i++) {
-                  let neighbor = neighbors[i];
-                  if (!this.closedList.includes(neighbor) && !this.isObstacle(neighbor.name)) {
-                  neighbor.g = currentNode.g + this.distance(currentNode.name, neighbor.name);
-                  neighbor.f = neighbor.g + this.heuristic(neighbor.name, goal.name);
-                  neighbor.parent = currentNode;
-                  if (!this.openList.includes(neighbor)) {
-                  this.openList.push(neighbor);
-                  }
-                  
-                  }
-                  }
-                  }
-                  // No result was found -- empty array signifies failure to find path
-                  return [];
+    // If no path is found, return an empty array
+    return [];
   }
 }
   
@@ -97,38 +100,38 @@ class AStar {
     '../../../node_modules/leaflet/dist/leaflet.css'
   ],
 })
-export class MapManagerComponent implements OnInit {
-  map!: L.Map;
-  astar: AStar;
-  @ViewChild('map', {static: false}) mapContainer!: ElementRef;
+export class MapManagerComponent implements AfterViewInit {
+  private map!: L.Map;
+  private astar: AStar;
 
-  constructor() {
-    this.astar = new AStar();
+  constructor(@Optional() private parent: Map_Node) {
+    let heuristic = (a: Map_Node, b: Map_Node) => L.latLng(a.name).distanceTo(L.latLng(b.name));
+    this.astar = new AStar(heuristic);
   }
 
-  ngOnInit() {
+  ngAfterViewInit() {
     this.map = L.map("map", {
       center: [51.505, -0.09],
       zoom: 13
     });
+
     L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
-      attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
-      maxZoom: 18,
+      attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>',
+      maxZoom: 18
     }).addTo(this.map);
-    this.map.on('click', this.handleMapClick.bind(this));
-  }
 
-  handleMapClick(e: L.LeafletMouseEvent) {
-    let start = new Map_Node(new L.LatLng(51.505, -0.09), 0, 0);
-    let goal = new Map_Node(e.latlng, 0, 0);
-    let path = this.astar.findPath(start, goal);
-    console.log(path);
+    this.map.on('click', (event: L.LeafletMouseEvent) => {
+      let start = new Map_Node(event.latlng, 0, 0);
+      let goal = new Map_Node(new L.LatLng(51.5, -0.1), 0, 0);
+      let path = this.astar.findPath(start, goal);
+      console.log(path);
 
-    // Add markers for start and goal
-    let startMarker = L.marker(start.name).addTo(this.map);
-    let goalMarker = L.marker(goal.name).addTo(this.map);
+      // Add markers for start and goal
+      let startMarker = L.marker(start.name).addTo(this.map);
+      let goalMarker = L.marker(goal.name).addTo(this.map);
 
-    // Draw the path on the map
-    let pathLine = L.polyline(path.map(node => node.name), {color: 'red'}).addTo(this.map);
+      // Draw the path on the map
+      let pathLine = L.polyline(path.map(node => node.name), { color: 'red' }).addTo(this.map);
+    });
   }
 }
